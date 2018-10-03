@@ -1,8 +1,8 @@
-'use strict'
+'use strict';
 
 import { NativeModules } from 'react-native'
 
-var CalendarEvents = NativeModules.CalendarEvents
+var CalendarEvents = NativeModules.CalendarEvents;
 
 export default {
 
@@ -18,6 +18,10 @@ export default {
     return CalendarEvents.findAllEvents(startDate, endDate, calendars)
   },
 
+  async createCalendar (name, color) {
+      return CalendarEvents.create(name, color)
+  },
+    
   async findCalendars () {
     return CalendarEvents.findCalendars()
   },
