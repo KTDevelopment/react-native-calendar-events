@@ -2,7 +2,7 @@
 
 import { NativeModules } from 'react-native';
 
-const RNCalendarEvents = NativeModules.RNCalendarEvents
+const RNCalendarEvents = NativeModules.RNCalendarEvents;
 
 export default {
 
@@ -16,6 +16,10 @@ export default {
 
   fetchAllEvents (startDate, endDate, calendars = []) {
     return RNCalendarEvents.fetchAllEvents(startDate, endDate, calendars)
+  },
+
+  createCalendar (name, color) {
+    return RNCalendarEvents.create(name, color)
   },
 
   findCalendars () {

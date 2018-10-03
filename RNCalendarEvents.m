@@ -37,7 +37,7 @@ static NSString *const _attendees    = @"attendees";
             lroundf(r * 255),
             lroundf(g * 255),
             lroundf(b * 255)];
-}   
+}
 
 @synthesize bridge = _bridge;
 
@@ -646,6 +646,70 @@ RCT_EXPORT_METHOD(authorizeEventStore:(RCTPromiseResolveBlock)resolve rejecter:(
     }];
 }
 
+RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+
+    // If the user has iCloud enabled and the Calendar sync option is also enabled within the iCloud
+    // settings, the calendar created here MUST be created as an iCloud calendar. If it's created
+    // as a local calendar it won't show up in the system's calendar list.
+
+    // If the user doesn't have iCloud enabled, then we can go ahead and create a local calendar.
+
+    if(!self.eventStore) self.eventStore = [[EKEventStore alloc] init];
+
+    EKSource *theSource;
+
+    // First: Check if the user has an iCloud source set-up.
+    for (EKSource *source in self.eventStore.sources)
+    {
+        if (source.sourceType == EKSourceTypeCalDAV && [source.title isEqualToString:@"iCloud"])
+        {
+            theSource = source;
+            break;
+        }
+    }
+
+    // Second: If no iCloud source is set-up / utilised, then fall back and use the local source.
+    if (theSource == nil)
+    {
+        for (EKSource *source in self.eventStore.sources)
+        {
+            if (source.sourceType == EKSourceTypeLocal)
+            {
+                theSource = source;
+                break;
+            }
+        }
+    }
+
+    // If there is no local source and no iCloud source, we're unable to create a custom calendar.
+    if (theSource == nil)
+    {
+        return reject(@"error", @"theSource is nil", nil);
+    }
+
+    // Create a custom calendar that will be responsible for holding event data.
+    EKCalendar *calendar = [EKCalendar calendarForEntityType:EKEntityTypeEvent eventStore:self.eventStore];
+
+    calendar.source = theSource;
+    calendar.title = aTitle;
+    calendar.color = color
+
+    // Save the calendar to the |EKEventStore| object.
+    BOOL result = [self.eventStore saveCalendar:calendar commit:YES error:nil];
+
+    if (result == NO)
+    {
+        // There was an error with creating the calendar.
+        return reject(@"error", @"theSource is NO", nil);
+    }
+
+    // When the calendar is saved, the UUID is generated and we're able to store this value (if required).
+    NSString *calendarID = calendar.calendarIdentifier;
+
+    return resolve(calendarID);
+}
+
 RCT_EXPORT_METHOD(findCalendars:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
     if (![self isCalendarAccessGranted]) {
@@ -823,3 +887,4 @@ RCT_EXPORT_METHOD(removeEvent:(NSString *)eventId options:(NSDictionary *)option
 }
 
 @end
+

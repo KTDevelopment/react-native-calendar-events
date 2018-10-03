@@ -148,6 +148,60 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
         return result;
     }
 
+    private WritableNativeMap createCalendar(String calendarName, String calendarColor) {
+
+        try {
+            // don't create if it already exists
+            Uri evuri = CalendarContract.Calendars.CONTENT_URI;
+            final ContentResolver contentResolver = reactContext.getContentResolver();
+            Cursor result = contentResolver.query(evuri, new String[]{
+                    CalendarContract.Calendars._ID,
+                    CalendarContract.Calendars.NAME,
+                    CalendarContract.Calendars.CALENDAR_DISPLAY_NAME
+            }, null, null, null);
+
+            if (result != null) {
+                while (result.moveToNext()) {
+                    if ((result.getString(1) != null && result.getString(1).equals(calendarName)) ||
+                            (result.getString(2) != null && result.getString(2).equals(calendarName))) {
+                        result.close();
+                        return null;
+                    }
+                }
+                result.close();
+            }
+
+            // doesn't exist yet, so create
+            Uri calUri = CalendarContract.Calendars.CONTENT_URI;
+            ContentValues cv = new ContentValues();
+            cv.put(CalendarContract.Calendars.ACCOUNT_NAME, "AccountName");
+            cv.put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL);
+            cv.put(CalendarContract.Calendars.NAME, calendarName);
+            cv.put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, calendarName);
+            if (calendarColor != null) {
+                cv.put(CalendarContract.Calendars.CALENDAR_COLOR, Color.parseColor(calendarColor));
+            }
+            cv.put(CalendarContract.Calendars.VISIBLE, 1);
+            cv.put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER);
+            cv.put(CalendarContract.Calendars.OWNER_ACCOUNT, "AccountName" );
+            cv.put(CalendarContract.Calendars.SYNC_EVENTS, 0);
+
+            calUri = calUri.buildUpon()
+                    .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+                    .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, "AccountName")
+                    .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+                    .build();
+
+            Uri created = contentResolver.insert(calUri, cv);
+            if (created != null) {
+                return created.getLastPathSegment();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     private WritableNativeArray findAttendeesByEventId(String eventID) {
         WritableNativeArray result;
         Cursor cursor;
@@ -298,7 +352,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
         Uri uri = uriBuilder.build();
 
         String selection = "(Instances._ID = " + eventID + ")";
-            
+
         cursor = cr.query(uri, new String[]{
                 CalendarContract.Instances._ID,
                 CalendarContract.Instances.TITLE,
@@ -1017,6 +1071,26 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
             promise.resolve("authorized");
         } else {
             this.requestCalendarReadWritePermission(promise);
+        }
+    }
+
+    @ReactMethod
+    public void create(final String title, final String color, final Promise promise) {
+        if (this.haveCalendarReadWritePermissions()) {
+            try {
+                Thread thread = new Thread(new Runnable(){
+                    @Override
+                    public void run() {
+                        WritableArray calendarId = createCalendar(title, color);
+                        promise.resolve(calendarId);
+                    }
+                });
+                thread.start();
+            } catch (Exception e) {
+                promise.reject("calendar request error", e.getMessage());
+            }
+        } else {
+            promise.reject("create calendar error", "you don't have permissions to create an calendar");
         }
     }
 
