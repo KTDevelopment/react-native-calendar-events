@@ -649,13 +649,16 @@ RCT_EXPORT_METHOD(authorizeEventStore:(RCTPromiseResolveBlock)resolve rejecter:(
 RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
 
+    if (![self isCalendarAccessGranted]) {
+            reject(@"error", @"unauthorized to access calendar", nil);
+            return;
+        }
     // If the user has iCloud enabled and the Calendar sync option is also enabled within the iCloud
     // settings, the calendar created here MUST be created as an iCloud calendar. If it's created
     // as a local calendar it won't show up in the system's calendar list.
 
     // If the user doesn't have iCloud enabled, then we can go ahead and create a local calendar.
 
-    if(!self.eventStore) self.eventStore = [[EKEventStore alloc] init];
 
     EKSource *theSource;
 
@@ -693,16 +696,10 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
 
     calendar.source = theSource;
     calendar.title = aTitle;
-    calendar.color = color
+    calendar.cgColor = color;
 
     // Save the calendar to the |EKEventStore| object.
     BOOL result = [self.eventStore saveCalendar:calendar commit:YES error:nil];
-
-    if (result == NO)
-    {
-        // There was an error with creating the calendar.
-        return reject(@"error", @"theSource is NO", nil);
-    }
 
     // When the calendar is saved, the UUID is generated and we're able to store this value (if required).
     NSString *calendarID = calendar.calendarIdentifier;
