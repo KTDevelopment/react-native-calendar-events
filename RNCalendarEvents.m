@@ -650,9 +650,25 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
 {
 
     if (![self isCalendarAccessGranted]) {
-            reject(@"error", @"unauthorized to access calendar", nil);
+        reject(@"error", @"unauthorized to access calendar", nil);
+        return;
+    }
+    // if Calendar already Exists don't create it
+
+    NSArray* calendars = [self.eventStore calendarsForEntityType:EKEntityTypeEvent];
+
+    if (!calendars) {
+        reject(@"error", @"error accessing calendars", nil);
+        return;
+    }
+
+    for (EKCalendar *calendar in calendars) {
+        if([calendar.title isEqualToString:aTitle]) {
+            reject(@"error", @"calendar already exists", nil);
             return;
         }
+    }
+
     // If the user has iCloud enabled and the Calendar sync option is also enabled within the iCloud
     // settings, the calendar created here MUST be created as an iCloud calendar. If it's created
     // as a local calendar it won't show up in the system's calendar list.
@@ -696,7 +712,7 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
 
     calendar.source = theSource;
     calendar.title = aTitle;
-    calendar.cgColor = color;
+    calendar.CGColor = color;
 
     // Save the calendar to the |EKEventStore| object.
     BOOL result = [self.eventStore saveCalendar:calendar commit:YES error:nil];
