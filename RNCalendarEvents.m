@@ -39,6 +39,15 @@ static NSString *const _attendees    = @"attendees";
             lroundf(b * 255)];
 }
 
+// Assumes input like "#00FF00" (#RRGGBB)
+- (UIColor*) colorFromHexString:(NSString*) hexString {
+  unsigned rgbValue = 0;
+  NSScanner *scanner = [NSScanner scannerWithString:hexString];
+  [scanner setScanLocation:1]; // bypass '#' character
+  [scanner scanHexInt:&rgbValue];
+  return [UIColor colorWithRed:((rgbValue & 0xFF0000) >> 16) / 255.0 green:((rgbValue & 0xFF00) >> 8) / 255.0 blue:(rgbValue & 0xFF) / 255.0 alpha:1.0];
+}
+
 @synthesize bridge = _bridge;
 
 RCT_EXPORT_MODULE()
@@ -608,6 +617,21 @@ RCT_EXPORT_MODULE()
     return [formedCalendarEvent copy];
 }
 
+- (EKCalendar*) findEKCalendar: (NSString *)calendarName {
+  NSArray<EKCalendar *> *calendars = [self.eventStore calendarsForEntityType:EKEntityTypeEvent];
+  if (calendars != nil && calendars.count > 0) {
+    for (EKCalendar *thisCalendar in calendars) {
+      if ([thisCalendar.title isEqualToString:calendarName]) {
+        return thisCalendar;
+      }
+      if ([thisCalendar.calendarIdentifier isEqualToString:calendarName]) {
+        return thisCalendar;
+      }
+    }
+  }
+  return nil;
+}
+
 #pragma mark -
 #pragma mark RCT Exports
 
@@ -646,7 +670,7 @@ RCT_EXPORT_METHOD(authorizeEventStore:(RCTPromiseResolveBlock)resolve rejecter:(
     }];
 }
 
-RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXPORT_METHOD(create:(NSString *)aTitle hexColor:(NSString *)hexColor resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
 
     if (![self isCalendarAccessGranted]) {
@@ -664,7 +688,7 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
 
     for (EKCalendar *calendar in calendars) {
         if([calendar.title isEqualToString:aTitle]) {
-            reject(@"error", @"calendar already exists", nil);
+            resolve(@"calendar already exists");
             return;
         }
     }
@@ -679,20 +703,16 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
     EKSource *theSource;
 
     // First: Check if the user has an iCloud source set-up.
-    for (EKSource *source in self.eventStore.sources)
-    {
-        if (source.sourceType == EKSourceTypeCalDAV && [source.title isEqualToString:@"iCloud"])
-        {
+    for (EKSource *source in self.eventStore.sources) {
+        if (source.sourceType == EKSourceTypeCalDAV && [source.title isEqualToString:@"iCloud"]) {
             theSource = source;
             break;
         }
     }
 
     // Second: If no iCloud source is set-up / utilised, then fall back and use the local source.
-    if (theSource == nil)
-    {
-        for (EKSource *source in self.eventStore.sources)
-        {
+    if (theSource == nil) {
+        for (EKSource *source in self.eventStore.sources) {
             if (source.sourceType == EKSourceTypeLocal)
             {
                 theSource = source;
@@ -702,8 +722,7 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
     }
 
     // If there is no local source and no iCloud source, we're unable to create a custom calendar.
-    if (theSource == nil)
-    {
+    if (theSource == nil) {
         return reject(@"error", @"theSource is nil", nil);
     }
 
@@ -712,7 +731,11 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
 
     calendar.source = theSource;
     calendar.title = aTitle;
-    calendar.CGColor = color;
+
+    if (hexColor != (id)[NSNull null]) {
+        UIColor *theColor = [self colorFromHexString:hexColor];
+        calendar.CGColor = theColor.CGColor;
+    }
 
     // Save the calendar to the |EKEventStore| object.
     BOOL result = [self.eventStore saveCalendar:calendar commit:YES error:nil];
@@ -721,6 +744,33 @@ RCT_EXPORT_METHOD(create:(NSString *)aTitle color:(NSString *)color resolver:(RC
     NSString *calendarID = calendar.calendarIdentifier;
 
     return resolve(calendarID);
+}
+
+RCT_EXPORT_METHOD(deleteCalendarByName:(NSString *)aTitle resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+
+    if (![self isCalendarAccessGranted]) {
+        reject(@"error", @"unauthorized to access calendar", nil);
+        return;
+    }
+
+    EKCalendar *thisCalendar = [self findEKCalendar:aTitle];
+
+    if (thisCalendar == nil) {
+        resolve(@"calendar not found");
+        return;
+    }
+
+    NSError *error;
+    [self.eventStore removeCalendar:thisCalendar commit:YES error:&error];
+
+    if (error) {
+        reject(@"error", @"error in deleting calendar", nil);
+        return;
+    }
+
+    resolve(@"calendar deleted");
+    return;
 }
 
 RCT_EXPORT_METHOD(findCalendars:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)

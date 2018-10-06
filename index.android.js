@@ -19,7 +19,11 @@ export default {
   },
 
   async createCalendar (name, color) {
-      return CalendarEvents.create(name, color)
+      return CalendarEvents.createCalendar(name, color)
+  },
+
+  async deleteCalendarByName (name) {
+    return RNCalendarEvents.deleteCalendarByName(name)
   },
     
   async findCalendars () {

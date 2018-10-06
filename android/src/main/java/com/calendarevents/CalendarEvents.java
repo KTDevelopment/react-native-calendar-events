@@ -148,7 +148,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
         return result;
     }
 
-    private WritableNativeMap createCalendar(String calendarName, String calendarColor) {
+    private String createEventCalendar(String calendarName, String calendarColor) {
 
         try {
             // don't create if it already exists
@@ -201,6 +201,63 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
         }
         return null;
     }
+
+    public void deleteEventCalendar(String calendarName) {
+        try {
+            Uri evuri = CalendarContract.Calendars.CONTENT_URI;
+            final ContentResolver contentResolver = cordova.getActivity().getContentResolver();
+            Cursor result = contentResolver.query(evuri, new String[]{CalendarContract.Calendars._ID, CalendarContract.Calendars.NAME, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME}, null, null, null);
+            if (result != null) {
+                while (result.moveToNext()) {
+                    if (result.getString(1) != null && result.getString(1).equals(calendarName) || result.getString(2) != null && result.getString(2).equals(calendarName)) {
+                        long calid = result.getLong(0);
+                        Uri deleteUri = ContentUris.withAppendedId(evuri, calid);
+                        contentResolver.delete(deleteUri, null, null);
+                    }
+                }
+                result.close();
+            }
+
+            // also delete previously crashing calendars, see https://github.com/EddyVerbruggen/Calendar-PhoneGap-Plugin/issues/241
+            deleteCrashingCalendars(contentResolver);
+        } catch (Throwable t) {
+            System.err.println(t.getMessage());
+            t.printStackTrace();
+        }
+    }
+
+    private void deleteCrashingCalendars(ContentResolver contentResolver) {
+        // first find any faulty Calendars
+        final String fixingAccountName = "FixingAccountName";
+        String selection = CalendarContract.Calendars.ACCOUNT_NAME + " IS NULL";
+        Uri uri = CalendarContract.Calendars.CONTENT_URI;
+        uri = uri.buildUpon()
+                .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+                .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, fixingAccountName)
+                .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+                .build();
+        ContentValues values = new ContentValues();
+        values.put(CalendarContract.Calendars.ACCOUNT_NAME, fixingAccountName);
+        values.put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL);
+        int count = contentResolver.update(uri, values, selection, null);
+
+        // now delete any faulty Calendars
+        if (count > 0) {
+            Uri evuri = CalendarContract.Calendars.CONTENT_URI;
+            Cursor result = contentResolver.query(evuri, new String[]{CalendarContract.Calendars._ID, CalendarContract.Calendars.ACCOUNT_NAME}, null, null, null);
+            if (result != null) {
+                while (result.moveToNext()) {
+                    if (result.getString(1) != null && result.getString(1).equals(fixingAccountName)) {
+                        long calid = result.getLong(0);
+                        Uri deleteUri = ContentUris.withAppendedId(evuri, calid);
+                        contentResolver.delete(deleteUri, null, null);
+                    }
+                }
+                result.close();
+            }
+        }
+    }
+
 
     private WritableNativeArray findAttendeesByEventId(String eventID) {
         WritableNativeArray result;
@@ -1075,13 +1132,13 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void create(final String title, final String color, final Promise promise) {
+    public void createCalendar(final String title, final String color, final Promise promise) {
         if (this.haveCalendarReadWritePermissions()) {
             try {
                 Thread thread = new Thread(new Runnable(){
                     @Override
                     public void run() {
-                        WritableArray calendarId = createCalendar(title, color);
+                        String calendarId = createEventCalendar(title, color);
                         promise.resolve(calendarId);
                     }
                 });
@@ -1090,7 +1147,27 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
                 promise.reject("calendar request error", e.getMessage());
             }
         } else {
-            promise.reject("create calendar error", "you don't have permissions to create an calendar");
+            promise.reject("create calendar error", "you don't have permissions to create a calendar");
+        }
+    }
+
+    @ReactMethod
+    public void deleteCalendar(final String name, final Promise promise) {
+        if (this.haveCalendarReadWritePermissions()) {
+            try {
+                Thread thread = new Thread(new Runnable(){
+                    @Override
+                    public void run() {
+                        deleteEventCalendar(name);
+                        promise.resolve();
+                    }
+                });
+                thread.start();
+            } catch (Exception e) {
+                promise.reject("delete request error", e.getMessage());
+            }
+        } else {
+            promise.reject("delete calendar error", "you don't have permissions to delete a calendar");
         }
     }
 

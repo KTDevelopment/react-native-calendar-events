@@ -22,6 +22,10 @@ export default {
     return RNCalendarEvents.create(name, color)
   },
 
+  deleteCalendarByName (name) {
+    return RNCalendarEvents.deleteCalendarByName(name)
+  },
+
   findCalendars () {
     return RNCalendarEvents.findCalendars();
   },
