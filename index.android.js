@@ -23,7 +23,7 @@ export default {
   },
 
   async deleteCalendarByName (name) {
-    return RNCalendarEvents.deleteCalendarByName(name)
+    return CalendarEvents.deleteCalendarByName(name)
   },
     
   async findCalendars () {
