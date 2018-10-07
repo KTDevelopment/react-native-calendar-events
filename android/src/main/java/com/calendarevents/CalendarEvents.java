@@ -14,6 +14,7 @@ import android.provider.CalendarContract;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.database.Cursor;
+import android.graphics.Color;
 
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -205,7 +206,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
     public void deleteEventCalendar(String calendarName) {
         try {
             Uri evuri = CalendarContract.Calendars.CONTENT_URI;
-            final ContentResolver contentResolver = cordova.getActivity().getContentResolver();
+            final ContentResolver contentResolver = reactContext.getContentResolver();
             Cursor result = contentResolver.query(evuri, new String[]{CalendarContract.Calendars._ID, CalendarContract.Calendars.NAME, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME}, null, null, null);
             if (result != null) {
                 while (result.moveToNext()) {
@@ -1159,7 +1160,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
                     @Override
                     public void run() {
                         deleteEventCalendar(name);
-                        promise.resolve();
+                        promise.resolve(true);
                     }
                 });
                 thread.start();
