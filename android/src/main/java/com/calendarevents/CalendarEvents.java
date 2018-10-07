@@ -1153,7 +1153,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void deleteCalendar(final String name, final Promise promise) {
+    public void deleteCalendarByName(final String name, final Promise promise) {
         if (this.haveCalendarReadWritePermissions()) {
             try {
                 Thread thread = new Thread(new Runnable(){
