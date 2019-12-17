@@ -1,6 +1,6 @@
 'use strict';
 
-import { NativeModules } from 'react-native'
+import { NativeModules, processColor } from 'react-native'
 
 var CalendarEvents = NativeModules.CalendarEvents;
 
@@ -28,6 +28,13 @@ export default {
     
   async findCalendars () {
     return CalendarEvents.findCalendars()
+  },
+
+  async saveCalendar (options = {}) {
+    return CalendarEvents.saveCalendar({
+      ...options,
+      color: options.color ? processColor(options.color) : undefined,
+    });
   },
 
   async findEventById (id) {

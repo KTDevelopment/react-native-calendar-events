@@ -15,6 +15,8 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.database.Cursor;
 import android.graphics.Color;
+import android.accounts.Account;
+import android.accounts.AccountManager;
 
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -30,8 +32,11 @@ import com.facebook.react.bridge.WritableNativeArray;
 import com.facebook.react.bridge.WritableNativeMap;
 import com.facebook.react.bridge.Dynamic;
 
+import java.sql.Array;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.TimeZone;
@@ -94,6 +99,16 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
         return writePermission == PackageManager.PERMISSION_GRANTED &&
                 readPermission == PackageManager.PERMISSION_GRANTED;
     }
+
+    private boolean shouldShowRequestPermissionRationale() {
+                Activity currentActivity = getCurrentActivity();
+
+        boolean permission = ActivityCompat.shouldShowRequestPermissionRationale(currentActivity,
+                    Manifest.permission.WRITE_CALENDAR);
+
+        return permission;
+    }
+
     //endregion
 
     private WritableNativeArray findEventCalendars() {
@@ -260,6 +275,94 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
     }
 
 
+    private Integer calAccessConstantMatchingString(String string) {
+        if (string.equals("contributor")) {
+            return CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR;
+        }
+        if (string.equals("editor")) {
+            return CalendarContract.Calendars.CAL_ACCESS_EDITOR;
+        }
+        if (string.equals("freebusy")) {
+            return CalendarContract.Calendars.CAL_ACCESS_FREEBUSY;
+        }
+        if (string.equals("override")) {
+            return CalendarContract.Calendars.CAL_ACCESS_OVERRIDE;
+        }
+        if (string.equals("owner")) {
+            return CalendarContract.Calendars.CAL_ACCESS_OWNER;
+        }
+        if (string.equals("read")) {
+            return CalendarContract.Calendars.CAL_ACCESS_READ;
+        }
+        if (string.equals("respond")) {
+            return CalendarContract.Calendars.CAL_ACCESS_RESPOND;
+        }
+        if (string.equals("root")) {
+            return CalendarContract.Calendars.CAL_ACCESS_ROOT;
+        }
+        return CalendarContract.Calendars.CAL_ACCESS_NONE;
+    }
+
+    private int addCalendar(ReadableMap details) throws Exception, SecurityException {
+
+        ContentResolver cr = reactContext.getContentResolver();
+        ContentValues calendarValues = new ContentValues();
+
+        // required fields for new calendars
+        if (!details.hasKey("source")) {
+            throw new Exception("new calendars require `source` object");
+        }
+        if (!details.hasKey("name")) {
+            throw new Exception("new calendars require `name`");
+        }
+        if (!details.hasKey("title")) {
+            throw new Exception("new calendars require `title`");
+        }
+        if (!details.hasKey("color")) {
+            throw new Exception("new calendars require `color`");
+        }
+        if (!details.hasKey("accessLevel")) {
+            throw new Exception("new calendars require `accessLevel`");
+        }
+        if (!details.hasKey("ownerAccount")) {
+            throw new Exception("new calendars require `ownerAccount`");
+        }
+
+        ReadableMap source = details.getMap("source");
+
+        if (!source.hasKey("name")) {
+            throw new Exception("new calendars require a `source` object with a `name`");
+        }
+
+        Boolean isLocalAccount = false;
+        if (source.hasKey("isLocalAccount")) {
+            isLocalAccount = source.getBoolean("isLocalAccount");
+        }
+
+        if (!source.hasKey("type") && isLocalAccount == false) {
+            throw new Exception("new calendars require a `source` object with a `type`, or `isLocalAccount`: true");
+        }
+
+        calendarValues.put(CalendarContract.Calendars.ACCOUNT_NAME, source.getString("name"));
+        calendarValues.put(CalendarContract.Calendars.ACCOUNT_TYPE, isLocalAccount ? CalendarContract.ACCOUNT_TYPE_LOCAL : source.getString("type"));
+        calendarValues.put(CalendarContract.Calendars.CALENDAR_COLOR, details.getInt("color"));
+        calendarValues.put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, calAccessConstantMatchingString(details.getString("accessLevel")));
+        calendarValues.put(CalendarContract.Calendars.OWNER_ACCOUNT, details.getString("ownerAccount"));
+        calendarValues.put(CalendarContract.Calendars.NAME, details.getString("name"));
+        calendarValues.put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, details.getString("title"));
+        // end required fields
+
+        Uri.Builder uriBuilder = CalendarContract.Calendars.CONTENT_URI.buildUpon();
+        uriBuilder.appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true");
+        uriBuilder.appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, source.getString("name"));
+        uriBuilder.appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, isLocalAccount ? CalendarContract.ACCOUNT_TYPE_LOCAL : source.getString("type"));
+
+        Uri calendarsUri = uriBuilder.build();
+
+        Uri calendarUri = cr.insert(calendarsUri, calendarValues);
+        return Integer.parseInt(calendarUri.getLastPathSegment());
+    }
+
     private WritableNativeArray findAttendeesByEventId(String eventID) {
         WritableNativeArray result;
         Cursor cursor;
@@ -274,7 +377,9 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
                 CalendarContract.Attendees.ATTENDEE_EMAIL,
                 CalendarContract.Attendees.ATTENDEE_TYPE,
                 CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                CalendarContract.Attendees.ATTENDEE_STATUS
+                CalendarContract.Attendees.ATTENDEE_STATUS,
+                CalendarContract.Attendees.ATTENDEE_IDENTITY,
+                CalendarContract.Attendees.ATTENDEE_ID_NAMESPACE
         }, query, args, null);
 
         if (cursor != null && cursor.moveToFirst()) {
@@ -304,9 +409,9 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
                 eStartDate.setTimeInMillis((long)startDate.asDouble());
             }
 
-            if (startDate.getType() == ReadableType.String) {
+            if (endDate.getType() == ReadableType.String) {
                 eEndDate.setTime(sdf.parse(endDate.asString()));
-            } else if (startDate.getType() == ReadableType.Number) {
+            } else if (endDate.getType() == ReadableType.Number) {
                 eEndDate.setTimeInMillis((long)endDate.asDouble());
             }
         } catch (ParseException e) {
@@ -358,6 +463,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
                 CalendarContract.Instances.DURATION,
                 CalendarContract.Instances.ORIGINAL_SYNC_ID,
         }, selection, null, null);
+
 
         return serializeEvents(cursor);
     }
@@ -441,8 +547,13 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
     private int addEvent(String title, ReadableMap details, ReadableMap options) throws ParseException {
         String dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
         SimpleDateFormat sdf = new SimpleDateFormat(dateFormat);
-        sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
-
+        boolean skipTimezone = false;
+        if(details.hasKey("skipAndroidTimezone") && details.getBoolean("skipAndroidTimezone")){
+            skipTimezone = true;
+        }
+        if(!skipTimezone){
+            sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
+        }
         ContentResolver cr = reactContext.getContentResolver();
         ContentValues eventValues = new ContentValues();
 
@@ -493,7 +604,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
         }
 
         if (details.hasKey("recurrence")) {
-            String rule = createRecurrenceRule(details.getString("recurrence"), null, null, null);
+            String rule = createRecurrenceRule(details.getString("recurrence"), null, null, null, null, null, null);
             if (rule != null) {
                 eventValues.put(CalendarContract.Events.RRULE, rule);
             }
@@ -508,6 +619,9 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
                 Integer interval = null;
                 Integer occurrence = null;
                 String endDate = null;
+                ReadableArray daysOfWeek = null;
+                String weekStart = null;
+                Integer weekPositionInMonth = null;
 
                 if (recurrenceRule.hasKey("interval")) {
                     interval = recurrenceRule.getInt("interval");
@@ -534,7 +648,19 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
                     }
                 }
 
-                String rule = createRecurrenceRule(frequency, interval, endDate, occurrence);
+                if (recurrenceRule.hasKey("daysOfWeek")) {
+                    daysOfWeek = recurrenceRule.getArray("daysOfWeek");
+                }
+
+                if (recurrenceRule.hasKey("weekStart")) {
+                    weekStart = recurrenceRule.getString("weekStart");
+                }
+
+                if (recurrenceRule.hasKey("weekPositionInMonth")) {
+                    weekPositionInMonth = recurrenceRule.getInt("weekPositionInMonth");
+                }
+
+                String rule = createRecurrenceRule(frequency, interval, endDate, occurrence, daysOfWeek, weekStart, weekPositionInMonth);
                 if (duration != null) {
                     eventValues.put(CalendarContract.Events.DURATION, duration);
                 }
@@ -567,7 +693,6 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
         if (details.hasKey("availability")) {
             eventValues.put(CalendarContract.Events.AVAILABILITY, availabilityConstantMatchingString(details.getString("availability")));
         }
-
 
         if (details.hasKey("id")) {
             int eventID = Integer.parseInt(details.getString("id"));
@@ -657,17 +782,19 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
             Uri eventUri = cr.insert(createEventUri, eventValues);
 
             if (eventUri != null) {
-                eventID = Integer.parseInt(eventUri.getLastPathSegment());
+                String rowId = eventUri.getLastPathSegment();
+                if (rowId != null) {
+                    eventID = Integer.parseInt(rowId);
 
-                if (details.hasKey("alarms")) {
-                    createRemindersForEvent(cr, eventID, details.getArray("alarms"));
+                    if (details.hasKey("alarms")) {
+                        createRemindersForEvent(cr, eventID, details.getArray("alarms"));
+                    }
+
+                    if (details.hasKey("attendees")) {
+                        createAttendeesForEvent(cr, eventID, details.getArray("attendees"));
+                    }
+                    return eventID;
                 }
-
-                if (details.hasKey("attendees")) {
-                    createAttendeesForEvent(cr, eventID, details.getArray("attendees"));
-                }
-
-                return eventID;
 
             }
             return eventID;
@@ -757,7 +884,7 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
     //region Attendees
     private void createAttendeesForEvent(ContentResolver resolver, int eventID, ReadableArray attendees) {
         Cursor cursor = CalendarContract.Attendees.query(resolver, eventID, new String[] {
-            CalendarContract.Attendees._ID
+                CalendarContract.Attendees._ID
         });
 
         while (cursor.moveToNext()) {
@@ -788,23 +915,34 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
 
     //region Reminders
     private void createRemindersForEvent(ContentResolver resolver, int eventID, ReadableArray reminders) {
+        Cursor cursor = null;
 
-        Cursor cursor = CalendarContract.Reminders.query(resolver, eventID, new String[] {
+        if (resolver != null) {
+            cursor = CalendarContract.Reminders.query(resolver, eventID, new String[] {
                 CalendarContract.Reminders._ID
-        });
-
-        while (cursor.moveToNext()) {
-            long reminderId = cursor.getLong(0);
-            Uri reminderUri = ContentUris.withAppendedId(CalendarContract.Reminders.CONTENT_URI, reminderId);
-            resolver.delete(reminderUri, null, null);
+            });
         }
-        cursor.close();
+
+        while (cursor != null && cursor.moveToNext()) {
+            Uri reminderUri = null;
+            long reminderId = cursor.getLong(0);
+            if (reminderId > 0) {
+                reminderUri = ContentUris.withAppendedId(CalendarContract.Reminders.CONTENT_URI, reminderId);
+            }
+            if (reminderUri != null) {
+                resolver.delete(reminderUri, null, null);
+            }
+        }
+
+        if (cursor != null) {
+            cursor.close();
+        }
 
         for (int i = 0; i < reminders.size(); i++) {
             ReadableMap reminder = reminders.getMap(i);
             ReadableType type = reminder.getType("date");
             if (type == ReadableType.Number) {
-                int minutes = Math.abs(reminder.getInt("date"));
+                int minutes = reminder.getInt("date");
                 ContentValues reminderValues = new ContentValues();
 
                 reminderValues.put(CalendarContract.Reminders.EVENT_ID, eventID);
@@ -900,8 +1038,19 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
     }
     //endregion
 
+    private String ReadableArrayToString (ReadableArray strArr) {
+        ArrayList<Object> array = strArr.toArrayList();
+        StringBuilder strBuilder = new StringBuilder();
+        for (int i = 0; i < array.size(); i++) {
+            strBuilder.append(array.get(i).toString() + ',');
+        }
+        String newString = strBuilder.toString();
+        newString = newString.substring(0, newString.length() - 1);
+        return newString;
+    }
+
     //region Recurrence Rule
-    private String createRecurrenceRule(String recurrence, Integer interval, String endDate, Integer occurrence) {
+    private String createRecurrenceRule(String recurrence, Integer interval, String endDate, Integer occurrence, ReadableArray daysOfWeek, String weekStart, Integer weekPositionInMonth) {
         String rrule;
 
         if (recurrence.equals("daily")) {
@@ -914,6 +1063,19 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
             rrule = "FREQ=YEARLY";
         } else {
             return null;
+        }
+
+        if (daysOfWeek != null && recurrence.equals("weekly")) {
+            rrule += ";BYDAY=" + ReadableArrayToString(daysOfWeek);
+        }
+
+        if (recurrence.equals("monthly") && daysOfWeek != null && weekPositionInMonth != null) {
+            rrule += ";BYSETPOS=" + weekPositionInMonth;
+            rrule += ";BYDAY=" + ReadableArrayToString(daysOfWeek);
+        }
+
+        if (weekStart != null) {
+            rrule += ";WKST=" + weekStart;
         }
 
         if (interval != null) {
@@ -977,8 +1139,10 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
             String[] recurrenceRules = cursor.getString(7).split(";");
             SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'");
 
-            event.putString("recurrence", recurrenceRules[0].split("=")[1].toLowerCase());
-            recurrenceRule.putString("frequency", recurrenceRules[0].split("=")[1].toLowerCase());
+            if (recurrenceRules.length > 0 && recurrenceRules[0].split("=").length > 1) {
+                event.putString("recurrence", recurrenceRules[0].split("=")[1].toLowerCase());
+                recurrenceRule.putString("frequency", recurrenceRules[0].split("=")[1].toLowerCase());
+            }
 
             if (cursor.getColumnIndex(CalendarContract.Events.DURATION) != -1 && cursor.getString(cursor.getColumnIndex(CalendarContract.Events.DURATION)) != null) {
                 recurrenceRule.putString("duration", cursor.getString(cursor.getColumnIndex(CalendarContract.Events.DURATION)));
@@ -1067,10 +1231,6 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
             calendar.putBoolean("isPrimary", cursor.getString(3).equals("1"));
         }
 
-        if (cursor.getString(3) != null) {
-            calendar.putBoolean("isPrimary", cursor.getString(3).equals("1"));
-        }
-
         int accesslevel = cursor.getInt(4);
 
         if (accesslevel == CalendarContract.Calendars.CAL_ACCESS_ROOT ||
@@ -1095,7 +1255,11 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
 
             attendee.putString("name", cursor.getString( 2));
             attendee.putString("email", cursor.getString(3));
-
+            attendee.putString("type", cursor.getString(4));
+            attendee.putString("relationship", cursor.getString(5));
+            attendee.putString("status", cursor.getString(6));
+            attendee.putString("identity", cursor.getString(7));
+            attendee.putString("id_namespace", cursor.getString(8));
             results.pushMap(attendee);
         }
 
@@ -1113,8 +1277,10 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
             promise.resolve("authorized");
         } else if (!permissionRequested) {
             promise.resolve("undetermined");
-        } else {
+        } else if(this.shouldShowRequestPermissionRationale()) {
             promise.resolve("denied");
+        } else {
+            promise.resolve("restricted");
         }
     }
 
@@ -1189,6 +1355,30 @@ public class CalendarEvents extends ReactContextBaseJavaModule {
             }
         } else {
             promise.reject("add event error", "you don't have permissions to retrieve an event to the users calendar");
+        }
+    }
+
+    @ReactMethod
+    public void saveCalendar(final ReadableMap options, final Promise promise) {
+        if (!this.haveCalendarReadWritePermissions()) {
+            promise.reject("save calendar error", "unauthorized to access calendar");
+            return;
+        }
+        try {
+            Thread thread = new Thread(new Runnable(){
+                @Override
+                public void run() {
+                    try {
+                        Integer calendarID = addCalendar(options);
+                        promise.resolve(calendarID.toString());
+                    } catch (Exception e) {
+                        promise.reject("save calendar error", e.getMessage());
+                    }
+                }
+            });
+            thread.start();
+        } catch (Exception e) {
+            promise.reject("save calendar error", "Calendar could not be saved", e);
         }
     }
 
